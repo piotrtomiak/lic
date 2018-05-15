@@ -1172,6 +1172,7 @@ class SubmodelToCalloutCommand(QUndoCommand):
                 self.submodelInstanceList.append(part)
                 part.setParentItem(None)
                 self.targetStep.removePart(part)
+                self.parentModel.parts.remove(part)
                 
         self.addedParts = []
         calloutDone = False
@@ -1179,9 +1180,11 @@ class SubmodelToCalloutCommand(QUndoCommand):
             for page in self.submodel.pages:
                 for step in page.steps:
                     for part in step.csi.getPartList():
-                        part.matrix = LicHelpers.multiplyMatrices(part.matrix, submodelPart.matrix)
-                        self.addedParts.append(part)
-                        self.targetStep.addPart(part)
+                        newPart = part.duplicate()
+                        newPart.matrix = LicHelpers.multiplyMatrices(part.matrix, submodelPart.matrix)
+                        self.addedParts.append(newPart)
+                        self.targetStep.addPart(newPart)
+                        self.parentModel.parts.append(newPart)
 
                         if not calloutDone:
                             self.targetCallout.addPart(part)
@@ -1203,12 +1206,24 @@ class SubmodelToCalloutCommand(QUndoCommand):
         self.targetCallout.initLayout()
         
         self.parentModel.removeSubmodel(self.submodel)
+        if not self.hasSubmodelRecursively(self.parentModel):
+            del self.parentModel.instructions.partDictionary[self.submodel.filename]
         scene.emit(SIGNAL("layoutChanged()"))
         scene.lockApp(False)
         
         scene.selectPage(self.targetStep.parentItem().number)
         self.targetCallout.setSelected(True)
         scene.emit(SIGNAL("sceneClick"))
+ 
+    def hasSubmodelRecursively(self, model):
+        if self.submodel in model.submodels:
+            return True
+        
+        for m in model.submodels:
+            if self.hasSubmodelRecursively(m):
+                return True
+        
+        return False
  
     def undo(self):
         # Convert a Callout into a Submodel
@@ -1222,9 +1237,11 @@ class SubmodelToCalloutCommand(QUndoCommand):
         for part in self.addedParts:
             part.setParentItem(None)
             self.targetStep.removePart(part)
+            self.parentModel.parts.remove(part)
 
         for submodel in self.submodelInstanceList:
             self.targetStep.addPart(submodel)
+            self.parentModel.parts.add(submodel)
 
         self.parentModel.addSubmodel(self.submodel)
         
